@@ -4,7 +4,10 @@ description: >
   Investigation playbook for Sysmon Event ID 13 (registry value set or
   modified). Primary signal for persistence-via-registry techniques: Run
   keys, services, COM hijacking, image-file-execution-options abuse.
-source: sysmon_13
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "13"
 tags:
   sysmon_event_id: 13
   mitre_tactics:

@@ -5,8 +5,8 @@ description: >
   when a new process is created on a Windows endpoint. Covers ~80% of
   malware-execution alerts; almost every other Sysmon-based investigation
   starts here.  
-source: wazuh                       # the alert.source it scopes to
-match:                              # NEW — optional; presence triggers field-match
+source: wazuh
+match:
   field: data_win_system_eventID
   value: "1"
 tags:

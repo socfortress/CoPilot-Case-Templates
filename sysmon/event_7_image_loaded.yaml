@@ -5,7 +5,10 @@ description: >
   process). High-noise event — typically filtered to a subset. Primary
   signal for DLL sideloading, DLL hijacking, and suspicious module loads
   in long-running processes.
-source: sysmon_7
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "7"
 tags:
   sysmon_event_id: 7
   mitre_tactics:

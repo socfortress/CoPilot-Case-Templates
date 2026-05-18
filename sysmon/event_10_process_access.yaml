@@ -5,7 +5,10 @@ description: >
   when one process opens a handle to another. Primary signal for credential
   dumping (Mimikatz reading LSASS), debugger-based memory inspection, and
   reconnaissance of sensitive processes.
-source: sysmon_10
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "10"
 tags:
   sysmon_event_id: 10
   mitre_tactics:

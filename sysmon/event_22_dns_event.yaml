@@ -4,7 +4,10 @@ description: >
   Investigation playbook for Sysmon Event ID 22 (DNS query). Primary signal
   for C2 domain resolution, DGA traffic, DNS-based exfiltration, and
   suspicious resolver patterns.
-source: sysmon_22
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "22"
 tags:
   sysmon_event_id: 22
   mitre_tactics:

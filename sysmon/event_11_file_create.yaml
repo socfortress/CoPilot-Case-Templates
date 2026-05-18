@@ -4,7 +4,10 @@ description: >
   Investigation playbook for Sysmon Event ID 11 (FileCreate). Triggered when
   a process creates or overwrites a file. Primary signal for dropper artifacts,
   payload staging, and persistence-via-filesystem techniques.
-source: sysmon_11
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "11"
 tags:
   sysmon_event_id: 11
   mitre_tactics:

@@ -5,7 +5,10 @@ description: >
   when a process creates a thread in another process. Primary signal for
   process injection, including Cobalt Strike beacons, shellcode injection,
   and DLL injection.
-source: sysmon_8
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "8"
 tags:
   sysmon_event_id: 8
   mitre_tactics:

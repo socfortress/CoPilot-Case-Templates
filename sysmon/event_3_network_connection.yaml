@@ -4,7 +4,10 @@ description: >
   Investigation playbook for Sysmon Event ID 3 (Network Connection). Triggered
   when a process initiates an outbound TCP/UDP connection. Primary signal for
   C2 beacons, exfiltration, and unusual outbound traffic from server roles.
-source: sysmon_3
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "3"
 tags:
   sysmon_event_id: 3
   mitre_tactics:
