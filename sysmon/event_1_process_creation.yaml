@@ -4,8 +4,11 @@ description: >
   Investigation playbook for Sysmon Event ID 1 (Process Creation). Triggered
   when a new process is created on a Windows endpoint. Covers ~80% of
   malware-execution alerts; almost every other Sysmon-based investigation
-  starts here.
-source: sysmon_1
+  starts here.  
+source: wazuh                       # the alert.source it scopes to
+match:                              # NEW — optional; presence triggers field-match
+  field: data_win_system_eventID
+  value: "1"
 tags:
   sysmon_event_id: 1
   mitre_tactics:
