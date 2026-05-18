@@ -1,0 +1,73 @@
+key: sysmon-event-11-file-create
+name: "Sysmon EID 11 — FileCreate"
+description: >
+  Investigation playbook for Sysmon Event ID 11 (FileCreate). Triggered when
+  a process creates or overwrites a file. Primary signal for dropper artifacts,
+  payload staging, and persistence-via-filesystem techniques.
+source: sysmon_11
+tags:
+  sysmon_event_id: 11
+  mitre_tactics:
+    - persistence
+    - defense-evasion
+tasks:
+  - title: "Identify the creating process and target file"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `Image`, `ProcessId`, `User`, `TargetFilename`, `CreationUtcTime`.
+      Note the file extension and the directory.
+  - title: "Check the target path against known persistence locations"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      High-signal paths to scrutinize:
+      - Startup folders:
+        `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
+        `%ProgramData%\Microsoft\Windows\Start Menu\Programs\StartUp`
+      - Scheduled task XMLs: `C:\Windows\System32\Tasks\...`
+      - Service binary paths: `C:\Windows\System32\drivers\`,
+        `C:\Windows\System32\` for non-system files
+      - Office add-in folders (XLSTART, etc.)
+      - `C:\Windows\Temp\` for stagers
+      - User profile temp/downloads for binaries that will execute soon
+  - title: "Hash the new file and check VirusTotal"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Use the SHA256 from `Hashes`. VT lookup. For files in persistence
+      locations, also check the SHA1 / MD5 against your internal allowlist
+      if you maintain one.
+  - title: "Determine file type and intent"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      Beyond the extension, consider the actual content type. PE files
+      (.exe, .dll, .scr, .cpl), scripts (.ps1, .vbs, .js, .hta, .bat),
+      Office docs with macros, archives (.zip, .7z, .rar) all warrant
+      different next steps. Check for:
+      - Double extensions: `invoice.pdf.exe`
+      - RTLO unicode tricks reversing the extension display
+      - PE files with `.txt` / `.dat` extensions (renamed to bypass
+        naive filters)
+  - title: "Trace the creator's parent chain"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      Pivot to the matching EID 1 for the creating process. Walk the parent
+      tree. A browser dropping a file in Downloads is normal; a service
+      account writing a binary to System32 is not.
+  - title: "Look for immediate execution"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Search for an EID 1 event with `Image` equal to `TargetFilename`
+      within a few seconds after this FileCreate. Dropped-and-executed
+      patterns are higher-severity than dropped-and-dormant.
+  - title: "Document and quarantine decision"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      Decide: leave file in place and monitor, quarantine via Velociraptor
+      (move to a forensic vault path), or delete entirely. Note that
+      quarantine preserves the artifact for IR/forensics; deletion does not.

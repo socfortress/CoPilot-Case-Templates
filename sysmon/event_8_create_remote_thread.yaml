@@ -1,0 +1,75 @@
+key: sysmon-event-8-create-remote-thread
+name: "Sysmon EID 8 — CreateRemoteThread"
+description: >
+  Investigation playbook for Sysmon Event ID 8 (CreateRemoteThread). Triggered
+  when a process creates a thread in another process. Primary signal for
+  process injection, including Cobalt Strike beacons, shellcode injection,
+  and DLL injection.
+source: sysmon_8
+tags:
+  sysmon_event_id: 8
+  mitre_tactics:
+    - defense-evasion
+    - privilege-escalation
+tasks:
+  - title: "Identify source (injector) and target (victim) processes"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `SourceImage`, `SourceProcessId`, `SourceProcessGuid`,
+      `TargetImage`, `TargetProcessId`, `TargetProcessGuid`. Note both
+      `Image` paths. Common legitimate sources: AV/EDR products, debuggers,
+      OS subsystems. Suspicious sources: anything from `%TEMP%`, unsigned
+      binaries, scripting hosts (powershell, wscript, cscript).
+  - title: "Assess if this is expected security-product behavior"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      Some endpoint products (AV, EDR, app virtualization) legitimately use
+      CreateRemoteThread for scanning/hooking. Check `SourceImage` against
+      installed security products. If source is a known product binary in
+      its standard install path with a valid signature, this is likely
+      noise — document and close.
+  - title: "Hash and triage the source binary"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Cross-reference the source `ProcessGuid` against the matching EID 1
+      event to get the hash. VirusTotal lookup. Check signature status.
+  - title: "Inspect StartAddress and StartFunction"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      `StartAddress` and `StartFunction` reveal where the new thread begins
+      execution. Red flags:
+      - `StartFunction` empty + `StartAddress` pointing to a region not
+        backed by a loaded module (shellcode signature)
+      - `StartFunction = LoadLibrary*` (classic DLL injection)
+      - `StartFunction` pointing into a Microsoft DLL but with the source
+        being an unsigned binary
+  - title: "Target process — is the target high-value?"
+    mandatory: true
+    order_index: 4
+    guidelines: |
+      Critical targets that should rarely receive remote thread injection:
+      - `lsass.exe` (credential dumping)
+      - `winlogon.exe`
+      - Browsers (`chrome.exe`, `firefox.exe`, `msedge.exe`) — usually
+        cookie/credential theft
+      - `explorer.exe` — common process-hollowing target
+      Any injection into these escalates severity immediately.
+  - title: "Hunt for similar injection from the same host"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Query for other EID 8 events from the same `ComputerName` over the
+      last 7 days. Repeated injection activity from the same source
+      process (or repeated targeting of the same process) suggests an
+      established foothold.
+  - title: "Containment / next steps"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      If confirmed malicious: kill source process via Velociraptor, dump
+      memory of target process for forensics, isolate host. Document
+      injection chain and timeline in the report.

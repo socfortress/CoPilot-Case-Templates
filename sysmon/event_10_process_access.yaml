@@ -1,0 +1,73 @@
+key: sysmon-event-10-process-access
+name: "Sysmon EID 10 — ProcessAccess"
+description: >
+  Investigation playbook for Sysmon Event ID 10 (ProcessAccess). Triggered
+  when one process opens a handle to another. Primary signal for credential
+  dumping (Mimikatz reading LSASS), debugger-based memory inspection, and
+  reconnaissance of sensitive processes.
+source: sysmon_10
+tags:
+  sysmon_event_id: 10
+  mitre_tactics:
+    - credential-access
+    - discovery
+tasks:
+  - title: "Identify source and target processes"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `SourceImage`, `TargetImage`, both `ProcessGuid` values, both
+      users. If `TargetImage` is `lsass.exe` — treat as potential credential
+      access immediately.
+  - title: "Decode the GrantedAccess mask"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      `GrantedAccess` is a hex bitmask of PROCESS_* rights. Critical
+      patterns that indicate memory-read intent on LSASS:
+      - `0x1010` = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
+      - `0x1410` = adds PROCESS_QUERY_LIMITED_INFORMATION
+      - `0x1438` = PROCESS_VM_READ | PROCESS_VM_OPERATION | dup
+      - `0x143A` = the classic Mimikatz access mask
+      - Anything that includes `0x0010` (VM_READ) on LSASS is high-priority.
+  - title: "Assess the source process legitimacy"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Source process should be classifiable as one of:
+      - Known security product (EDR, AV) — likely benign, verify signer
+      - Microsoft binary doing routine work (Task Manager, perfmon) —
+        usually benign
+      - Unknown / unsigned / user-path binary opening LSASS with
+        VM_READ — almost certainly malicious
+  - title: "Check CallTrace for the API path"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      `CallTrace` shows the stack at the time of access. Look for:
+      - Unbacked memory regions (`UNKNOWN(0x...)`) — shellcode signature
+      - Calls coming from a non-standard module
+      - `ntdll.dll!NtOpenProcess` direct calls without standard prologue
+        (direct syscall evasion)
+  - title: "Pivot to other accesses from the same source"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      Look for additional EID 10 events from the same `SourceProcessGuid`.
+      Sweep of multiple sensitive processes (lsass.exe, winlogon.exe,
+      LSAISO/credential guard) suggests systematic credential harvesting.
+  - title: "Memory acquisition decision"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      If LSASS access is confirmed and source is unknown, collect a memory
+      dump of the source process via Velociraptor before killing it. This
+      preserves the unpacked payload / decrypted strings for later analysis.
+  - title: "Document and escalate"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      For any confirmed credential-access scenario: assume credentials on
+      the host are compromised. Rotate any service-account creds that
+      logged on, force password reset for interactive users, isolate the
+      host.

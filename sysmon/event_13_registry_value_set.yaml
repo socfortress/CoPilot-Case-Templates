@@ -1,0 +1,72 @@
+key: sysmon-event-13-registry-value-set
+name: "Sysmon EID 13 — RegistryEvent (Value Set)"
+description: >
+  Investigation playbook for Sysmon Event ID 13 (registry value set or
+  modified). Primary signal for persistence-via-registry techniques: Run
+  keys, services, COM hijacking, image-file-execution-options abuse.
+source: sysmon_13
+tags:
+  sysmon_event_id: 13
+  mitre_tactics:
+    - persistence
+    - privilege-escalation
+    - defense-evasion
+tasks:
+  - title: "Identify the writing process"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `Image`, `ProcessId`, `User`, `TargetObject`, `Details`.
+      Legitimate writers: installers (msiexec, setup.exe), management tools
+      (regedit by an admin, group policy), the OS itself (svchost.exe,
+      lsass.exe writing their own keys).
+  - title: "Match TargetObject against persistence key patterns"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      High-signal registry locations:
+      - **Run / RunOnce**:
+        `HKLM\Software\Microsoft\Windows\CurrentVersion\Run`
+        `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+        + `RunOnce`, `RunOnceEx`, `RunServices`, `RunServicesOnce` variants
+      - **Services**: `HKLM\System\CurrentControlSet\Services\<name>\ImagePath`
+      - **Image File Execution Options (debugger hijack)**:
+        `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\<exe>\Debugger`
+      - **AppInit_DLLs**:
+        `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs`
+      - **COM hijacking**: `HKCU\Software\Classes\CLSID\{...}\InProcServer32`
+      - **Scheduled Tasks (binary cache)**:
+        `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\...`
+      - **Winlogon**: `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Shell|Userinit`
+  - title: "Examine the value being set"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Look at `Details`. Red flags:
+      - Path pointing to `%TEMP%`, `%APPDATA%`, `%PUBLIC%`
+      - PowerShell with `-enc` / `-EncodedCommand`
+      - `cmd.exe /c` invoking a script in a user-writable location
+      - Long random / base64 strings in a Run-key value
+      - Unsigned binary path in a service `ImagePath`
+  - title: "Cross-check the value name for disguise"
+    mandatory: false
+    order_index: 3
+    guidelines: |
+      Run-key value names commonly mimic legit software (`Adobe Updater`,
+      `Microsoft Office Sync`, `Chrome Helper`). Compare the *path* in
+      `Details` against what the legit-named software would actually use.
+  - title: "Hunt for additional writes from the same process"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      Query other EID 13 (and EID 12, EID 14) events from the same
+      `ProcessGuid` over the previous 24h. Multiple persistence keys
+      written by the same process is a strong malicious signal.
+  - title: "Document and remediate"
+    mandatory: true
+    order_index: 5
+    guidelines: |
+      Decide: leave for monitoring (low-confidence), remove the registry
+      value via Velociraptor (medium/high), or full re-image (confirmed
+      compromise with multiple persistence mechanisms). Capture the
+      pre-remediation state for forensics.

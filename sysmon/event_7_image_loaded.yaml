@@ -1,0 +1,70 @@
+key: sysmon-event-7-image-loaded
+name: "Sysmon EID 7 — Image Loaded (DLL)"
+description: >
+  Investigation playbook for Sysmon Event ID 7 (Image / DLL loaded by a
+  process). High-noise event — typically filtered to a subset. Primary
+  signal for DLL sideloading, DLL hijacking, and suspicious module loads
+  in long-running processes.
+source: sysmon_7
+tags:
+  sysmon_event_id: 7
+  mitre_tactics:
+    - defense-evasion
+    - persistence
+    - privilege-escalation
+tasks:
+  - title: "Identify the loading process and the loaded image"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `Image` (the loading process), `ImageLoaded` (the DLL), `User`,
+      `ProcessGuid`. Cross-reference `ImageLoaded` against the loading
+      process — does this DLL belong to this app's expected module set?
+  - title: "Hash the loaded DLL and check VirusTotal"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      Use the SHA256 from `Hashes`. VirusTotal lookup. Pay extra attention
+      to detection names mentioning "injector", "loader", "sideload",
+      "hijack".
+  - title: "Check signer and signature status of the loaded DLL"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Fields: `Signed`, `Signature`, `SignatureStatus`. Red flags:
+      - Unsigned DLL in `C:\Windows\` or `C:\Program Files\`
+      - DLL signed by an unexpected vendor for the loading process
+        (e.g. a Microsoft Office app loading a DLL signed by an unknown CA)
+      - `SignatureStatus = Expired` on critical paths
+  - title: "Check DLL path for sideloading indicators"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      Where did this DLL live? Indicators:
+      - DLL in `%TEMP%`, `%APPDATA%`, `%LOCALAPPDATA%\Temp`
+      - DLL in `C:\Users\<user>\Downloads\` adjacent to a legit-named exe
+      - DLL with a name matching a system DLL (e.g. `version.dll`,
+        `dwmapi.dll`, `winmm.dll`) but located in an app's install dir
+        (classic sideload pattern)
+  - title: "Hunt for DLL hijack — same name, multiple paths"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      Search OpenSearch for other EID 7 events for the same `ImageLoaded`
+      filename. If the same DLL name loads from the system path
+      (`C:\Windows\System32\`) on most hosts but from a user path on the
+      target host, that's the sideload signature.
+  - title: "Cross-check known LOLBin / LOLBAS techniques"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Reference https://lolbas-project.github.io/ for known DLL-based LOLBin
+      techniques (e.g. `rundll32.exe` loading specific DLLs to evade defenses).
+      If the loaded DLL matches a documented technique, escalate.
+  - title: "Document and triage"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      Record process, DLL path, signer, hash verdict, and which (if any)
+      sideloading indicators applied. If the loaded DLL is in a user-writable
+      path, escalate regardless of signature status.

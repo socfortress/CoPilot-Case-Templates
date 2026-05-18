@@ -1,0 +1,92 @@
+key: sysmon-event-1-process-creation
+name: "Sysmon EID 1 — Process Creation"
+description: >
+  Investigation playbook for Sysmon Event ID 1 (Process Creation). Triggered
+  when a new process is created on a Windows endpoint. Covers ~80% of
+  malware-execution alerts; almost every other Sysmon-based investigation
+  starts here.
+source: sysmon_1
+tags:
+  sysmon_event_id: 1
+  mitre_tactics:
+    - execution
+    - defense-evasion
+tasks:
+  - title: "Capture the parent process tree"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `ParentImage`, `ParentCommandLine`, `ParentProcessGuid`, and
+      `ParentProcessId` from the alert. Walk up at least one level. Common
+      malicious chains to look for:
+      - Office app (`winword.exe`, `excel.exe`, `outlook.exe`) → `cmd.exe`,
+        `powershell.exe`, `wscript.exe`, `mshta.exe`
+      - `explorer.exe` → `powershell.exe` from a temp/download path
+      - `svchost.exe` spawned from a non-`services.exe` parent
+      - `regsvr32.exe`, `rundll32.exe` with unusual command lines
+  - title: "Hash the executable and check VirusTotal"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      Take the SHA256 from the `Hashes` field (Sysmon emits MD5, SHA1, SHA256,
+      IMPHASH by default). Query VirusTotal. Thresholds:
+      - 0/70 detections: likely clean, but check signature status
+      - 1-4/70: probable false positives, but worth pivoting on hash across
+        the fleet
+      - 5+/70: treat as suspicious; pivot immediately
+      - 15+/70: actionable; consider containment
+  - title: "Check binary signature and signer"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Look at `Signed`, `SignatureStatus`, and `Signature` fields if available
+      (requires Sysmon `<Image>` configuration). Red flags:
+      - `SignatureStatus = Unavailable` on a file in `C:\Windows\` paths
+      - Signed by a vendor inconsistent with the binary path (e.g. Microsoft
+        signature on a binary in `%TEMP%`)
+      - Self-signed certificates from generic CNs
+  - title: "Inspect the command line for obfuscation"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      Look at `CommandLine`. Indicators of evasion:
+      - `-enc`, `-EncodedCommand`, `FromBase64String` (PowerShell base64)
+      - Excessive backtick/caret escaping in cmd.exe lines
+      - `-w hidden`, `-WindowStyle Hidden`
+      - String concatenation tricks: `i'e'x`, `IEX([...])`, `&([scriptblock]...)`
+      - Calls to `Invoke-Expression`, `DownloadString`, `Net.WebClient`
+      - LOLBin patterns: `certutil -decode`, `bitsadmin /transfer`,
+        `mshta vbscript:`
+  - title: "Pivot on user context"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      Check `User` field. Is this account expected to run this binary at this
+      time? Service accounts running interactive tools (`powershell.exe`,
+      `cmd.exe`) are suspicious unless documented. Domain admin accounts
+      executing from user workstations may indicate credential theft.
+  - title: "Hunt for the same hash across the fleet"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Search OpenSearch / Wazuh indexer for the SHA256 in other Sysmon EID 1
+      events over the last 30 days. If the binary appears on multiple hosts
+      that don't normally share software, treat as lateral movement or
+      coordinated execution. Note first-seen and last-seen timestamps.
+  - title: "Collect Velociraptor process info if escalating"
+    mandatory: false
+    order_index: 6
+    guidelines: |
+      If the alert is escalating to active response, collect
+      `Windows.System.Pslist` and `Windows.Forensics.ProcessInfo` for the
+      affected host via Velociraptor. Gives you a live snapshot rather than
+      the historical Sysmon view.
+  - title: "Document findings and severity decision"
+    mandatory: true
+    order_index: 7
+    guidelines: |
+      Summarize: process, parent chain, hash + VT verdict, signature status,
+      command line concerns, fleet prevalence. Set severity: critical
+      (confirmed malicious + active impact), high (likely malicious),
+      medium (suspicious / under investigation), low (false positive
+      with documentation).

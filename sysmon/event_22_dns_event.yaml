@@ -1,0 +1,76 @@
+key: sysmon-event-22-dns-event
+name: "Sysmon EID 22 — DNSEvent"
+description: >
+  Investigation playbook for Sysmon Event ID 22 (DNS query). Primary signal
+  for C2 domain resolution, DGA traffic, DNS-based exfiltration, and
+  suspicious resolver patterns.
+source: sysmon_22
+tags:
+  sysmon_event_id: 22
+  mitre_tactics:
+    - command-and-control
+    - exfiltration
+tasks:
+  - title: "Identify the querying process"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `Image`, `ProcessId`, `User`, `QueryName`, `QueryStatus`,
+      `QueryResults`. Common legitimate queriers: browsers, mail clients,
+      update services. Suspicious: `powershell.exe`, `cmd.exe`,
+      `nslookup.exe` invoked by user processes, anything from `%TEMP%`.
+  - title: "Threat-intel the queried domain"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      `QueryName`:
+      - VirusTotal domain lookup
+      - AbuseIPDB if resolved
+      - SOCFortress threat intel feed
+      - Check TLD: `.tk`, `.ml`, `.ga`, `.cf`, `.xyz`, `.top` over-represented
+        in malware C2
+      - Check domain age: freshly registered domains (<30 days) are
+        higher-risk
+  - title: "Assess DGA / algorithmic patterns"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      DGA signatures in `QueryName`:
+      - High Shannon entropy in the subdomain or domain label
+      - Length unusual for legitimate domains (15-25 char random labels)
+      - Sequential or template-based patterns
+        (`xkj32d.example.com`, `xkj33d.example.com`, ...)
+      - Multiple subdomains queried in quick succession that all share a
+        random-looking parent label
+  - title: "Inspect QueryResults and QueryStatus"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      - `QueryStatus = 0` (success) for a known-bad domain = active C2
+      - `QueryStatus = 9003` (NXDOMAIN) for DGA-looking domains = the
+        algorithm is trying out names; the live one is somewhere in the set
+      - `QueryResults` containing IPs in suspicious ranges (e.g. fast-flux
+        providers, residential proxy services)
+  - title: "Look for DNS-tunneling indicators"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      - Unusually long `QueryName` labels (data encoded in subdomain)
+      - High query volume to the same parent domain over a short period
+      - `TXT` record queries from non-mail processes
+      - Repeated queries with incrementing/changing labels
+  - title: "Check resolver context"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Is the system using its expected DNS resolver? Endpoint clients pointing
+      at unusual public resolvers (e.g. an attacker-controlled DNS server)
+      bypass corporate DNS-layer defenses. Cross-check current resolver
+      against expected via Velociraptor `Windows.Network.NetstatEnriched`.
+  - title: "Containment"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      If confirmed malicious: sinkhole the domain at corporate DNS, block
+      resolved IPs at firewall, identify other hosts that have queried the
+      same domain (pivot via OpenSearch), isolate them as needed.

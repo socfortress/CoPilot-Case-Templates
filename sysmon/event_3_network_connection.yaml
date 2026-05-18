@@ -1,0 +1,74 @@
+key: sysmon-event-3-network-connection
+name: "Sysmon EID 3 — Network Connection"
+description: >
+  Investigation playbook for Sysmon Event ID 3 (Network Connection). Triggered
+  when a process initiates an outbound TCP/UDP connection. Primary signal for
+  C2 beacons, exfiltration, and unusual outbound traffic from server roles.
+source: sysmon_3
+tags:
+  sysmon_event_id: 3
+  mitre_tactics:
+    - command-and-control
+    - exfiltration
+tasks:
+  - title: "Identify the connecting process"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Pull `Image`, `ProcessId`, `ProcessGuid`, `User`. Common legitimate
+      sources: browsers, update services (`svchost.exe` with the appropriate
+      service), Office apps (telemetry). Suspicious sources: `powershell.exe`,
+      `cmd.exe`, `mshta.exe`, `regsvr32.exe`, `rundll32.exe`,
+      `installutil.exe`, anything from `%TEMP%` / `%APPDATA%`.
+  - title: "Hash the process binary and check VirusTotal"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      Pivot to the matching EID 1 event for the same `ProcessGuid` to get
+      the hash. Run VirusTotal on the SHA256. See the EID 1 playbook for
+      threshold guidance.
+  - title: "Threat-intel the destination"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Check `DestinationIp` and `DestinationHostname`:
+      - AbuseIPDB confidence score (>40% is significant)
+      - VirusTotal community votes on the IP/domain
+      - Shodan: what services are exposed on this IP, any tags
+      - SOCFortress threat intel feed
+      Flag any hits on known C2 infrastructure or DGA-style domains.
+  - title: "Check destination port for protocol abuse"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      Look at `DestinationPort` + `Protocol`. Red flags:
+      - Outbound to non-standard ports for the protocol (e.g. HTTP on 8443,
+        HTTPS on 4443, IRC ports 6660-6669, anything in the 10000+ range
+        for unknown services)
+      - Repeated connections to the same IP on the same high port
+        (beaconing signature)
+      - SMB outbound (445) to an external IP (almost always wrong)
+  - title: "Hunt for beaconing pattern"
+    mandatory: false
+    order_index: 4
+    guidelines: |
+      Query OpenSearch for all EID 3 events from the same `ProcessGuid` over
+      the last 24h. Bucket by 1-minute intervals. A consistent connection
+      every ~60s with low variance is a beacon signature (Cobalt Strike,
+      Sliver, Empire defaults). Also check for jittered intervals (e.g. 50-70s
+      uniformly distributed).
+  - title: "Pivot on other destinations from the same process"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Are there other DestinationIps the process talked to in the same
+      session? Multiple distinct destinations from a non-browser process
+      can indicate staging or multi-stage C2 fallback.
+  - title: "Containment decision"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      Based on findings, decide: monitor (low-confidence suspicious), isolate
+      host (medium/high confidence), block destination at firewall (confirmed
+      malicious), kill process via Velociraptor (active C2 confirmed).
+      Document the decision and the evidence supporting it.
